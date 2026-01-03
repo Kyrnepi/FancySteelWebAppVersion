@@ -82,6 +82,7 @@ function LocalMode() {
   const holdIntervalRef = useRef(null) // For hold-to-repeat buttons
   const randomGameKnownPowerRef = useRef(0) // Track power known by random game (UI may not update)
   const randomGameKnownBuzzerRef = useRef(false) // Track buzzer state known by random game
+  const randomGameKnownModeRef = useRef(null) // Track active mode known by random game
 
   // Load config on mount
   useEffect(() => {
@@ -378,6 +379,12 @@ function LocalMode() {
     }
   }
 
+  // Dedicated deactivation function for random game (uses ref, not stale state)
+  const handleModeDeactivate = async () => {
+    setActiveMode(null)
+    await sendCommand('/mode/0')
+  }
+
   const handleBuzzerToggle = async () => {
     const newValue = !buzzerEnabled
     setBuzzerEnabled(newValue)
@@ -433,6 +440,32 @@ function LocalMode() {
     const newConfig = { ...randomGameConfig, [key]: value }
     setRandomGameConfig(newConfig)
     saveRandomGameConfig(newConfig)
+  }
+
+  // Helper functions for +/- buttons that update AND save config
+  const updateTimerMin = (delta) => {
+    const newValue = Math.max(10, randomGameConfig.timerMin + delta)
+    updateRandomGameConfig('timerMin', newValue)
+  }
+  const updateTimerMax = (delta) => {
+    const newValue = Math.max(10, randomGameConfig.timerMax + delta)
+    updateRandomGameConfig('timerMax', newValue)
+  }
+  const updateStepMin = (delta) => {
+    const newValue = Math.max(5, randomGameConfig.stepDurationMin + delta)
+    updateRandomGameConfig('stepDurationMin', newValue)
+  }
+  const updateStepMax = (delta) => {
+    const newValue = Math.max(5, randomGameConfig.stepDurationMax + delta)
+    updateRandomGameConfig('stepDurationMax', newValue)
+  }
+  const updateGameDuration = (delta) => {
+    const newValue = Math.max(60, randomGameConfig.gameDuration + delta)
+    updateRandomGameConfig('gameDuration', newValue)
+  }
+  const updateMaxPower = (delta) => {
+    const newValue = Math.min(100, Math.max(0, randomGameConfig.maxPower + delta))
+    updateRandomGameConfig('maxPower', newValue)
   }
 
   // Hold-to-repeat handlers for +/- buttons
@@ -521,22 +554,32 @@ function LocalMode() {
     switch (randomAction) {
       case 'petTraining':
         await handleModeToggle('petTraining', '/mode/S2')
+        randomGameKnownModeRef.current = 'petTraining'
+        setActiveMode('petTraining')
         addNotification('Random: Pet Training activated', 'info')
         break
       case 'petFast':
         await handleModeToggle('petFast', '/mode/S2F')
+        randomGameKnownModeRef.current = 'petFast'
+        setActiveMode('petFast')
         addNotification('Random: Pet Fast activated', 'info')
         break
       case 'petFreeze':
         await handleModeToggle('petFreeze', '/mode/S2Z')
+        randomGameKnownModeRef.current = 'petFreeze'
+        setActiveMode('petFreeze')
         addNotification('Random: Pet Freeze activated', 'info')
         break
       case 'sleep':
         await handleModeToggle('sleep', '/mode/S4')
+        randomGameKnownModeRef.current = 'sleep'
+        setActiveMode('sleep')
         addNotification('Random: Sleep Deprivation activated', 'info')
         break
       case 'random':
         await handleModeToggle('random', '/mode/RN')
+        randomGameKnownModeRef.current = 'random'
+        setActiveMode('random')
         addNotification('Random: Random mode activated', 'info')
         break
       case 'buzzer': {
@@ -605,14 +648,13 @@ function LocalMode() {
     }
   }
 
-  // End game sequence - uses ONLY button handlers, NO direct sendCommand calls!
+  // End game sequence - uses button handlers to update UI and send commands
   const endRandomGame = async () => {
-    // Deactivate active mode by pressing its toggle (if any mode is active)
-    if (activeMode) {
-      const mode = modes.find(m => m.key === activeMode)
-      if (mode) {
-        await handleModeToggle(mode.key, mode.endpoint)
-      }
+    // Deactivate active mode using dedicated deactivation function
+    // (handleModeToggle has closure issues with stale activeMode state)
+    if (randomGameKnownModeRef.current) {
+      await handleModeDeactivate()
+      randomGameKnownModeRef.current = null
     }
 
     // Stop timer if running by pressing the timer toggle
@@ -621,9 +663,11 @@ function LocalMode() {
     }
 
     // IMPORTANT: Activate buzzer BEFORE beeping (must be ON for beeps to work)
-    // Press the buzzer toggle button to turn it ON (if not already)
-    if (!buzzerEnabled) {
+    // Use our tracked ref to know the real buzzer state
+    if (!randomGameKnownBuzzerRef.current) {
       await handleBuzzerToggle()
+      randomGameKnownBuzzerRef.current = true
+      setBuzzerEnabled(true)
       await new Promise(resolve => setTimeout(resolve, 300))
     }
 
@@ -664,6 +708,7 @@ function LocalMode() {
       // Initialize known values from current state (for tracking during game)
       randomGameKnownPowerRef.current = state.power
       randomGameKnownBuzzerRef.current = buzzerEnabled
+      randomGameKnownModeRef.current = activeMode
 
       addNotification('Random Game started!', 'success')
 
@@ -1027,17 +1072,17 @@ function LocalMode() {
                 <div className="rg-setting-compact">
                   <span className="rg-label-small">Min</span>
                   <div className="rg-plusminus-compact">
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMin: Math.max(10, c.timerMin - 10) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMin: Math.max(10, c.timerMin - 10) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateTimerMin(-10))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateTimerMin(-10))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
                     <span className="rg-value-sm">{formatTime(randomGameConfig.timerMin)}</span>
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMin: c.timerMin + 10 })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMin: c.timerMin + 10 })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateTimerMin(10))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateTimerMin(10))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
                   </div>
                 </div>
                 <div className="rg-setting-compact">
                   <span className="rg-label-small">Max</span>
                   <div className="rg-plusminus-compact">
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMax: Math.max(10, c.timerMax - 10) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMax: Math.max(10, c.timerMax - 10) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateTimerMax(-10))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateTimerMax(-10))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
                     <span className="rg-value-sm">{formatTime(randomGameConfig.timerMax)}</span>
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMax: c.timerMax + 10 })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMax: c.timerMax + 10 })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateTimerMax(10))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateTimerMax(10))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
                   </div>
                 </div>
               </div>
@@ -1050,17 +1095,17 @@ function LocalMode() {
                 <div className="rg-setting-compact">
                   <span className="rg-label-small">Min</span>
                   <div className="rg-plusminus-compact">
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMin: Math.max(5, c.stepDurationMin - 5) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMin: Math.max(5, c.stepDurationMin - 5) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateStepMin(-5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateStepMin(-5))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
                     <span className="rg-value-sm">{formatTime(randomGameConfig.stepDurationMin)}</span>
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMin: c.stepDurationMin + 5 })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMin: c.stepDurationMin + 5 })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateStepMin(5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateStepMin(5))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
                   </div>
                 </div>
                 <div className="rg-setting-compact">
                   <span className="rg-label-small">Max</span>
                   <div className="rg-plusminus-compact">
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMax: Math.max(5, c.stepDurationMax - 5) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMax: Math.max(5, c.stepDurationMax - 5) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateStepMax(-5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateStepMax(-5))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
                     <span className="rg-value-sm">{formatTime(randomGameConfig.stepDurationMax)}</span>
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMax: c.stepDurationMax + 5 })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMax: c.stepDurationMax + 5 })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateStepMax(5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateStepMax(5))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
                   </div>
                 </div>
               </div>
@@ -1073,17 +1118,17 @@ function LocalMode() {
                 <div className="rg-setting-compact">
                   <span className="rg-label-small">Duration</span>
                   <div className="rg-plusminus-compact">
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, gameDuration: Math.max(60, c.gameDuration - 60) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, gameDuration: Math.max(60, c.gameDuration - 60) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateGameDuration(-60))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateGameDuration(-60))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
                     <span className="rg-value-sm">{formatTime(randomGameConfig.gameDuration)}</span>
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, gameDuration: c.gameDuration + 60 })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, gameDuration: c.gameDuration + 60 })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateGameDuration(60))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateGameDuration(60))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
                   </div>
                 </div>
                 <div className="rg-setting-compact">
                   <span className="rg-label-small">Max Power</span>
                   <div className="rg-plusminus-compact">
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, maxPower: Math.max(0, c.maxPower - 5) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, maxPower: Math.max(0, c.maxPower - 5) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateMaxPower(-5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateMaxPower(-5))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
                     <span className="rg-value-sm">{randomGameConfig.maxPower}%</span>
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, maxPower: Math.min(100, c.maxPower + 5) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, maxPower: Math.min(100, c.maxPower + 5) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateMaxPower(5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateMaxPower(5))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
                   </div>
                 </div>
               </div>

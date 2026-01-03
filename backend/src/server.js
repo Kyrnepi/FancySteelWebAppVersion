@@ -337,6 +337,7 @@ const defaultRandomGameConfig = {
   enableTimer: true,
   enableZap: true,
   enableBeep: true,
+  enablePower: true,
   maxPower: 50,
   timerMin: 30,
   timerMax: 120,

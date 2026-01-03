@@ -3020,6 +3020,13 @@ body {
   /* Beep/Zap buttons stack on very small screens */
   .zap-buttons-row {
     flex-direction: column;
+    align-items: center;
+  }
+
+  .beep-button,
+  .zap-button {
+    max-width: 100%;
+    width: 100%;
   }
 
   /* Random Game responsive */
