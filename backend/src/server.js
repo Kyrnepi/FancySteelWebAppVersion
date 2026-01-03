@@ -247,6 +247,10 @@ const defaultTooltips = {
   tilt: {
     check: "Check current tilt value from device",
     set: "Set new tilt value"
+  },
+  randomGame: {
+    start: "Start the random game with selected options",
+    stop: "Stop the current random game"
   }
 };
 
@@ -317,6 +321,63 @@ app.post('/api/config/tooltips', (req, res) => {
   } catch (error) {
     console.error('Failed to save tooltips config:', error);
     res.status(500).json({ success: false, error: 'Failed to save tooltips config' });
+  }
+});
+
+// Random Game configuration
+const RANDOMGAME_CONFIG_FILE = path.join(CONFIG_PATH, 'randomgame.json');
+
+const defaultRandomGameConfig = {
+  enablePetTraining: true,
+  enablePetFast: true,
+  enablePetFreeze: true,
+  enableSleep: true,
+  enableRandom: true,
+  enableBuzzer: false,
+  enableTimer: true,
+  enableZap: true,
+  enableBeep: true,
+  maxPower: 50,
+  timerMin: 30,
+  timerMax: 120,
+  gameDuration: 300,
+  stepDurationMin: 10,
+  stepDurationMax: 60
+};
+
+// Get random game configuration
+app.get('/api/config/randomgame', (req, res) => {
+  try {
+    if (fs.existsSync(RANDOMGAME_CONFIG_FILE)) {
+      const data = fs.readFileSync(RANDOMGAME_CONFIG_FILE, 'utf8');
+      const config = JSON.parse(data);
+      res.json(config);
+    } else {
+      // Create default config file
+      fs.writeFileSync(RANDOMGAME_CONFIG_FILE, JSON.stringify(defaultRandomGameConfig, null, 2));
+      res.json(defaultRandomGameConfig);
+    }
+  } catch (error) {
+    console.error('Failed to read random game config:', error);
+    res.json(defaultRandomGameConfig);
+  }
+});
+
+// Save random game configuration
+app.post('/api/config/randomgame', (req, res) => {
+  try {
+    const config = req.body;
+
+    // Ensure config directory exists
+    if (!fs.existsSync(CONFIG_PATH)) {
+      fs.mkdirSync(CONFIG_PATH, { recursive: true });
+    }
+
+    fs.writeFileSync(RANDOMGAME_CONFIG_FILE, JSON.stringify(config, null, 2));
+    res.json({ success: true, message: 'Random game config saved' });
+  } catch (error) {
+    console.error('Failed to save random game config:', error);
+    res.status(500).json({ success: false, error: 'Failed to save random game config' });
   }
 });
 

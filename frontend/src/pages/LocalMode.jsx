@@ -7,7 +7,7 @@ import Button from '../components/Button'
 import Tooltip from '../components/Tooltip'
 
 // All available tiles (power includes zap, modes includes countdown)
-const ALL_TILES = ['power', 'lock', 'modes', 'release', 'tilt']
+const ALL_TILES = ['power', 'lock', 'modes', 'release', 'tilt', 'randomGame']
 
 // Available themes
 const THEMES = [
@@ -55,6 +55,34 @@ function LocalMode() {
   // Tooltips
   const [tooltips, setTooltips] = useState({})
 
+  // Random Game state
+  const [randomGameConfig, setRandomGameConfig] = useState({
+    enablePetTraining: true,
+    enablePetFast: true,
+    enablePetFreeze: true,
+    enableSleep: true,
+    enableRandom: true,
+    enableBuzzer: false,
+    enableTimer: true,
+    enableZap: true,
+    enableBeep: true,
+    enablePower: true, // Random power change action
+    maxPower: 50,
+    timerMin: 30,
+    timerMax: 120,
+    gameDuration: 300,
+    stepDurationMin: 10,
+    stepDurationMax: 60
+  })
+  const [isRandomGameRunning, setIsRandomGameRunning] = useState(false)
+  const [randomGameTimeRemaining, setRandomGameTimeRemaining] = useState(0)
+  const randomGameIntervalRef = useRef(null)
+  const randomGameStepTimeoutRef = useRef(null)
+  const isRandomGameRunningRef = useRef(false) // Ref to avoid closure issues
+  const holdIntervalRef = useRef(null) // For hold-to-repeat buttons
+  const randomGameKnownPowerRef = useRef(0) // Track power known by random game (UI may not update)
+  const randomGameKnownBuzzerRef = useRef(false) // Track buzzer state known by random game
+
   // Load config on mount
   useEffect(() => {
     const loadConfig = async () => {
@@ -96,8 +124,21 @@ function LocalMode() {
       }
     }
 
+    const loadRandomGameConfig = async () => {
+      try {
+        const response = await fetch('/api/config/randomgame')
+        if (response.ok) {
+          const data = await response.json()
+          setRandomGameConfig(prev => ({ ...prev, ...data }))
+        }
+      } catch (error) {
+        console.log('Using default random game config')
+      }
+    }
+
     loadConfig()
     loadTooltips()
+    loadRandomGameConfig()
     checkConnection()
   }, [checkConnection])
 
@@ -375,6 +416,300 @@ function LocalMode() {
     addNotification(`Tilt set to ${tiltInput}`, 'success')
   }
 
+  // Random Game handlers
+  const saveRandomGameConfig = useCallback(async (config) => {
+    try {
+      await fetch('/api/config/randomgame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+      })
+    } catch (error) {
+      console.error('Failed to save random game config:', error)
+    }
+  }, [])
+
+  const updateRandomGameConfig = (key, value) => {
+    const newConfig = { ...randomGameConfig, [key]: value }
+    setRandomGameConfig(newConfig)
+    saveRandomGameConfig(newConfig)
+  }
+
+  // Hold-to-repeat handlers for +/- buttons
+  const startHold = (action) => {
+    action() // Execute immediately on press
+    holdIntervalRef.current = setInterval(action, 150) // Repeat while held
+  }
+
+  const stopHold = () => {
+    if (holdIntervalRef.current) {
+      clearInterval(holdIntervalRef.current)
+      holdIntervalRef.current = null
+    }
+  }
+
+  // Helper to set power to a specific value using the actual UI buttons
+  // Power must be multiple of 5, 1 second delay between each step for device sync
+  // IMPORTANT: Uses handlePowerUp/handlePowerDown - NO direct sendCommand calls!
+  // Uses randomGameKnownPowerRef to track power (UI state may not update correctly)
+  const setPowerToValue = async (targetPower) => {
+    // Ensure target is multiple of 5
+    const target = Math.round(targetPower / 5) * 5
+
+    while (randomGameKnownPowerRef.current !== target) {
+      if (randomGameKnownPowerRef.current < target) {
+        // Press the + button (calls handlePowerUp which sends command)
+        await handlePowerUp()
+        randomGameKnownPowerRef.current = Math.min(100, randomGameKnownPowerRef.current + 5)
+      } else {
+        // Press the - button (calls handlePowerDown which sends command)
+        await handlePowerDown()
+        randomGameKnownPowerRef.current = Math.max(0, randomGameKnownPowerRef.current - 5)
+      }
+      // Force UI update with our tracked value
+      setPower(randomGameKnownPowerRef.current)
+      // 1 second delay for device to sync
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+  }
+
+  // Helper to set timer to a specific value using the actual UI buttons
+  // Timer must be multiple of 10, 1 second delay between each step for device sync
+  // IMPORTANT: Uses handleCountdownUp/handleCountdownDown - NO direct sendCommand calls!
+  const setTimerToValue = async (targetSeconds) => {
+    // Ensure target is multiple of 10
+    const target = Math.round(targetSeconds / 10) * 10
+    let currentSeconds = countdownValue
+
+    while (currentSeconds !== target) {
+      if (currentSeconds < target) {
+        // Press the + button (calls handleCountdownUp which updates UI and sends command)
+        await handleCountdownUp()
+        currentSeconds = currentSeconds + 10
+      } else {
+        // Press the - button (calls handleCountdownDown which updates UI and sends command)
+        await handleCountdownDown()
+        currentSeconds = Math.max(10, currentSeconds - 10)
+      }
+      // 1 second delay for device to sync
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+  }
+
+  // Execute a random action
+  const executeRandomAction = async () => {
+    // Use ref to check running state (avoids closure issues with setTimeout)
+    if (!isRandomGameRunningRef.current) return
+
+    const availableActions = []
+
+    if (randomGameConfig.enablePetTraining) availableActions.push('petTraining')
+    if (randomGameConfig.enablePetFast) availableActions.push('petFast')
+    if (randomGameConfig.enablePetFreeze) availableActions.push('petFreeze')
+    if (randomGameConfig.enableSleep) availableActions.push('sleep')
+    if (randomGameConfig.enableRandom) availableActions.push('random')
+    if (randomGameConfig.enableBuzzer) availableActions.push('buzzer')
+    if (randomGameConfig.enableTimer) availableActions.push('timer')
+    if (randomGameConfig.enableZap) availableActions.push('zap')
+    if (randomGameConfig.enableBeep) availableActions.push('beep')
+    if (randomGameConfig.enablePower) availableActions.push('power')
+
+    if (availableActions.length === 0) return
+
+    const randomAction = availableActions[Math.floor(Math.random() * availableActions.length)]
+
+    switch (randomAction) {
+      case 'petTraining':
+        await handleModeToggle('petTraining', '/mode/S2')
+        addNotification('Random: Pet Training activated', 'info')
+        break
+      case 'petFast':
+        await handleModeToggle('petFast', '/mode/S2F')
+        addNotification('Random: Pet Fast activated', 'info')
+        break
+      case 'petFreeze':
+        await handleModeToggle('petFreeze', '/mode/S2Z')
+        addNotification('Random: Pet Freeze activated', 'info')
+        break
+      case 'sleep':
+        await handleModeToggle('sleep', '/mode/S4')
+        addNotification('Random: Sleep Deprivation activated', 'info')
+        break
+      case 'random':
+        await handleModeToggle('random', '/mode/RN')
+        addNotification('Random: Random mode activated', 'info')
+        break
+      case 'buzzer': {
+        // Toggle buzzer using the button handler
+        await handleBuzzerToggle()
+        // Update our tracking ref to reflect the new state
+        randomGameKnownBuzzerRef.current = !randomGameKnownBuzzerRef.current
+        // Force UI update with our tracked value
+        setBuzzerEnabled(randomGameKnownBuzzerRef.current)
+        addNotification(`Random: Buzzer ${randomGameKnownBuzzerRef.current ? 'ON' : 'OFF'}`, 'info')
+        break
+      }
+      case 'timer': {
+        // Random timer must be multiple of 10 (device works in steps of 10 seconds)
+        const minSteps = Math.ceil(randomGameConfig.timerMin / 10)
+        const maxSteps = Math.floor(randomGameConfig.timerMax / 10)
+        const randomTime = (Math.floor(Math.random() * (maxSteps - minSteps + 1)) + minSteps) * 10
+        await setTimerToValue(randomTime)
+        addNotification(`Random: Timer set to ${formatTime(randomTime)}`, 'info')
+        break
+      }
+      case 'power': {
+        // Random power must be multiple of 5 (device works in steps of 5%)
+        const maxSteps = Math.floor(randomGameConfig.maxPower / 5)
+        const randomPower = Math.floor(Math.random() * (maxSteps + 1)) * 5
+        await setPowerToValue(randomPower)
+        addNotification(`Random: Power set to ${randomPower}%`, 'info')
+        break
+      }
+      case 'zap': {
+        // Random power must be multiple of 5 (device works in steps of 5%)
+        const maxSteps = Math.floor(randomGameConfig.maxPower / 5)
+        const randomPower = Math.floor(Math.random() * (maxSteps + 1)) * 5
+        await setPowerToValue(randomPower)
+        await new Promise(resolve => setTimeout(resolve, 200))
+        await handleZapClick()
+        addNotification(`Random: Zap at ${randomPower}%`, 'warning')
+        break
+      }
+      case 'beep': {
+        // Buzzer must be activated for beep to work
+        // Remember previous state to restore after beep
+        const wasEnabled = buzzerEnabled
+        if (!wasEnabled) {
+          // Press the buzzer toggle button to turn it ON
+          await handleBuzzerToggle()
+          await new Promise(resolve => setTimeout(resolve, 300))
+        }
+        // Press the beep button
+        await handleBeepClick()
+        // Restore buzzer to previous state (turn off if it was off before)
+        if (!wasEnabled) {
+          await new Promise(resolve => setTimeout(resolve, 300))
+          // Press the buzzer toggle button to turn it OFF
+          await handleBuzzerToggle()
+        }
+        addNotification('Random: Beep!', 'info')
+        break
+      }
+    }
+
+    // Schedule next random action (use ref to avoid closure issues)
+    if (isRandomGameRunningRef.current) {
+      const nextDelay = Math.floor(Math.random() * (randomGameConfig.stepDurationMax - randomGameConfig.stepDurationMin + 1)) + randomGameConfig.stepDurationMin
+      randomGameStepTimeoutRef.current = setTimeout(executeRandomAction, nextDelay * 1000)
+    }
+  }
+
+  // End game sequence - uses ONLY button handlers, NO direct sendCommand calls!
+  const endRandomGame = async () => {
+    // Deactivate active mode by pressing its toggle (if any mode is active)
+    if (activeMode) {
+      const mode = modes.find(m => m.key === activeMode)
+      if (mode) {
+        await handleModeToggle(mode.key, mode.endpoint)
+      }
+    }
+
+    // Stop timer if running by pressing the timer toggle
+    if (isCountdownRunning) {
+      await handleToggleCountdown(false)
+    }
+
+    // IMPORTANT: Activate buzzer BEFORE beeping (must be ON for beeps to work)
+    // Press the buzzer toggle button to turn it ON (if not already)
+    if (!buzzerEnabled) {
+      await handleBuzzerToggle()
+      await new Promise(resolve => setTimeout(resolve, 300))
+    }
+
+    // Press the beep button 6 times to signal end
+    for (let i = 0; i < 6; i++) {
+      await handleBeepClick()
+      await new Promise(resolve => setTimeout(resolve, 400))
+    }
+
+    // Keep buzzer ON at the end (don't deactivate it)
+    addNotification('Random Game ended!', 'success')
+  }
+
+  // Start/Stop random game
+  const handleRandomGameToggle = async () => {
+    if (isRandomGameRunning) {
+      // Stop the game - update ref FIRST to stop any pending actions
+      isRandomGameRunningRef.current = false
+      setIsRandomGameRunning(false)
+      setRandomGameTimeRemaining(0)
+
+      if (randomGameIntervalRef.current) {
+        clearInterval(randomGameIntervalRef.current)
+        randomGameIntervalRef.current = null
+      }
+      if (randomGameStepTimeoutRef.current) {
+        clearTimeout(randomGameStepTimeoutRef.current)
+        randomGameStepTimeoutRef.current = null
+      }
+
+      await endRandomGame()
+    } else {
+      // Start the game - update ref FIRST so actions can execute
+      isRandomGameRunningRef.current = true
+      setIsRandomGameRunning(true)
+      setRandomGameTimeRemaining(randomGameConfig.gameDuration)
+
+      // Initialize known values from current state (for tracking during game)
+      randomGameKnownPowerRef.current = state.power
+      randomGameKnownBuzzerRef.current = buzzerEnabled
+
+      addNotification('Random Game started!', 'success')
+
+      // Start the countdown
+      randomGameIntervalRef.current = setInterval(() => {
+        setRandomGameTimeRemaining(prev => {
+          if (prev <= 1) {
+            // Game ended - update ref FIRST
+            isRandomGameRunningRef.current = false
+            setIsRandomGameRunning(false)
+            if (randomGameIntervalRef.current) {
+              clearInterval(randomGameIntervalRef.current)
+              randomGameIntervalRef.current = null
+            }
+            if (randomGameStepTimeoutRef.current) {
+              clearTimeout(randomGameStepTimeoutRef.current)
+              randomGameStepTimeoutRef.current = null
+            }
+            endRandomGame()
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+
+      // Start first random action
+      const firstDelay = Math.floor(Math.random() * (randomGameConfig.stepDurationMax - randomGameConfig.stepDurationMin + 1)) + randomGameConfig.stepDurationMin
+      randomGameStepTimeoutRef.current = setTimeout(executeRandomAction, firstDelay * 1000)
+    }
+  }
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (randomGameIntervalRef.current) {
+        clearInterval(randomGameIntervalRef.current)
+      }
+      if (randomGameStepTimeoutRef.current) {
+        clearTimeout(randomGameStepTimeoutRef.current)
+      }
+      if (holdIntervalRef.current) {
+        clearInterval(holdIntervalRef.current)
+      }
+    }
+  }, [])
+
   // Mode configurations
   const modes = [
     { key: 'petTraining', label: 'Pet Training', endpoint: '/mode/S2', color: 'green' },
@@ -390,7 +725,8 @@ function LocalMode() {
     lock: '🔒 Lock',
     modes: '🔧 Modes & Timer',
     release: '🕐 Release',
-    tilt: '📐 Tilt'
+    tilt: '📐 Tilt',
+    randomGame: '🎲 Random Game'
   }
 
   // Tile components
@@ -574,6 +910,193 @@ function LocalMode() {
               <Button variant="primary" onClick={handleSetTilt}>Set</Button>
             </Tooltip>
           </div>
+        </div>
+      </Card>
+    ),
+    randomGame: (
+      <Card title="Random Game" icon="🎲" className="random-game-card">
+        <div className="random-game-content">
+          {/* Game timer display when running */}
+          {isRandomGameRunning && (
+            <div className="random-game-timer">
+              <span className="timer-label">Time Remaining:</span>
+              <span className="timer-value">{formatTime(randomGameTimeRemaining)}</span>
+            </div>
+          )}
+
+          {/* Checkboxes in 3 columns */}
+          <div className="random-game-checkboxes">
+            <label className="rg-checkbox">
+              <input
+                type="checkbox"
+                checked={randomGameConfig.enablePetTraining}
+                onChange={(e) => updateRandomGameConfig('enablePetTraining', e.target.checked)}
+                disabled={isRandomGameRunning}
+              />
+              <span>Pet Training</span>
+            </label>
+            <label className="rg-checkbox">
+              <input
+                type="checkbox"
+                checked={randomGameConfig.enablePetFast}
+                onChange={(e) => updateRandomGameConfig('enablePetFast', e.target.checked)}
+                disabled={isRandomGameRunning}
+              />
+              <span>Pet Fast</span>
+            </label>
+            <label className="rg-checkbox">
+              <input
+                type="checkbox"
+                checked={randomGameConfig.enablePetFreeze}
+                onChange={(e) => updateRandomGameConfig('enablePetFreeze', e.target.checked)}
+                disabled={isRandomGameRunning}
+              />
+              <span>Pet Freeze</span>
+            </label>
+            <label className="rg-checkbox">
+              <input
+                type="checkbox"
+                checked={randomGameConfig.enableSleep}
+                onChange={(e) => updateRandomGameConfig('enableSleep', e.target.checked)}
+                disabled={isRandomGameRunning}
+              />
+              <span>Sleep Depriv.</span>
+            </label>
+            <label className="rg-checkbox">
+              <input
+                type="checkbox"
+                checked={randomGameConfig.enableRandom}
+                onChange={(e) => updateRandomGameConfig('enableRandom', e.target.checked)}
+                disabled={isRandomGameRunning}
+              />
+              <span>Random</span>
+            </label>
+            <label className="rg-checkbox">
+              <input
+                type="checkbox"
+                checked={randomGameConfig.enableBuzzer}
+                onChange={(e) => updateRandomGameConfig('enableBuzzer', e.target.checked)}
+                disabled={isRandomGameRunning}
+              />
+              <span>Buzzer</span>
+            </label>
+            <label className="rg-checkbox">
+              <input
+                type="checkbox"
+                checked={randomGameConfig.enableTimer}
+                onChange={(e) => updateRandomGameConfig('enableTimer', e.target.checked)}
+                disabled={isRandomGameRunning}
+              />
+              <span>Timer</span>
+            </label>
+            <label className="rg-checkbox">
+              <input
+                type="checkbox"
+                checked={randomGameConfig.enableZap}
+                onChange={(e) => updateRandomGameConfig('enableZap', e.target.checked)}
+                disabled={isRandomGameRunning}
+              />
+              <span>Zap</span>
+            </label>
+            <label className="rg-checkbox">
+              <input
+                type="checkbox"
+                checked={randomGameConfig.enableBeep}
+                onChange={(e) => updateRandomGameConfig('enableBeep', e.target.checked)}
+                disabled={isRandomGameRunning}
+              />
+              <span>Beep</span>
+            </label>
+            <label className="rg-checkbox">
+              <input
+                type="checkbox"
+                checked={randomGameConfig.enablePower}
+                onChange={(e) => updateRandomGameConfig('enablePower', e.target.checked)}
+                disabled={isRandomGameRunning}
+              />
+              <span>Power</span>
+            </label>
+          </div>
+
+          {/* Settings with +/- buttons - 2 column layout with hold-to-repeat */}
+          <div className="random-game-settings">
+            {/* Timer row: min | max */}
+            <div className="rg-settings-group">
+              <div className="rg-group-label">Timer</div>
+              <div className="rg-two-columns">
+                <div className="rg-setting-compact">
+                  <span className="rg-label-small">Min</span>
+                  <div className="rg-plusminus-compact">
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMin: Math.max(10, c.timerMin - 10) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMin: Math.max(10, c.timerMin - 10) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
+                    <span className="rg-value-sm">{formatTime(randomGameConfig.timerMin)}</span>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMin: c.timerMin + 10 })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMin: c.timerMin + 10 })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                  </div>
+                </div>
+                <div className="rg-setting-compact">
+                  <span className="rg-label-small">Max</span>
+                  <div className="rg-plusminus-compact">
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMax: Math.max(10, c.timerMax - 10) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMax: Math.max(10, c.timerMax - 10) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
+                    <span className="rg-value-sm">{formatTime(randomGameConfig.timerMax)}</span>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMax: c.timerMax + 10 })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, timerMax: c.timerMax + 10 })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Step row: min | max */}
+            <div className="rg-settings-group">
+              <div className="rg-group-label">Step</div>
+              <div className="rg-two-columns">
+                <div className="rg-setting-compact">
+                  <span className="rg-label-small">Min</span>
+                  <div className="rg-plusminus-compact">
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMin: Math.max(5, c.stepDurationMin - 5) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMin: Math.max(5, c.stepDurationMin - 5) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
+                    <span className="rg-value-sm">{formatTime(randomGameConfig.stepDurationMin)}</span>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMin: c.stepDurationMin + 5 })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMin: c.stepDurationMin + 5 })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                  </div>
+                </div>
+                <div className="rg-setting-compact">
+                  <span className="rg-label-small">Max</span>
+                  <div className="rg-plusminus-compact">
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMax: Math.max(5, c.stepDurationMax - 5) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMax: Math.max(5, c.stepDurationMax - 5) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
+                    <span className="rg-value-sm">{formatTime(randomGameConfig.stepDurationMax)}</span>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMax: c.stepDurationMax + 5 })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, stepDurationMax: c.stepDurationMax + 5 })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Settings row: Duration | Max Power */}
+            <div className="rg-settings-group">
+              <div className="rg-group-label">Settings</div>
+              <div className="rg-two-columns">
+                <div className="rg-setting-compact">
+                  <span className="rg-label-small">Duration</span>
+                  <div className="rg-plusminus-compact">
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, gameDuration: Math.max(60, c.gameDuration - 60) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, gameDuration: Math.max(60, c.gameDuration - 60) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
+                    <span className="rg-value-sm">{formatTime(randomGameConfig.gameDuration)}</span>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, gameDuration: c.gameDuration + 60 })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, gameDuration: c.gameDuration + 60 })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                  </div>
+                </div>
+                <div className="rg-setting-compact">
+                  <span className="rg-label-small">Max Power</span>
+                  <div className="rg-plusminus-compact">
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, maxPower: Math.max(0, c.maxPower - 5) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, maxPower: Math.max(0, c.maxPower - 5) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
+                    <span className="rg-value-sm">{randomGameConfig.maxPower}%</span>
+                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => setRandomGameConfig(c => ({ ...c, maxPower: Math.min(100, c.maxPower + 5) })))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => setRandomGameConfig(c => ({ ...c, maxPower: Math.min(100, c.maxPower + 5) })))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Start/Stop button */}
+          <button
+            className={`random-game-btn ${isRandomGameRunning ? 'stop' : 'start'}`}
+            onClick={handleRandomGameToggle}
+          >
+            {isRandomGameRunning ? '⏹ STOP' : '▶ START'}
+          </button>
         </div>
       </Card>
     )

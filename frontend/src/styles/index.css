@@ -2714,6 +2714,255 @@ body {
   padding: 0;
 }
 
+/* ===== Random Game Tile ===== */
+.random-game-card .card-content {
+  padding: 1rem;
+}
+
+.random-game-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.random-game-timer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, var(--success), var(--primary));
+  border-radius: var(--border-radius);
+  color: white;
+  font-weight: 600;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.random-game-timer .timer-label {
+  font-size: 0.875rem;
+}
+
+.random-game-timer .timer-value {
+  font-size: 1.5rem;
+  font-family: 'Courier New', monospace;
+}
+
+.random-game-checkboxes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.rg-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: var(--bg-tertiary);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  font-size: 0.8rem;
+}
+
+.rg-checkbox:hover {
+  background: var(--bg-secondary);
+}
+
+.rg-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.rg-checkbox input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rg-checkbox span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.random-game-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rg-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rg-setting label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.rg-setting input {
+  padding: 0.5rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  text-align: center;
+  font-family: 'Courier New', monospace;
+}
+
+.rg-setting input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.rg-setting input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rg-time-range {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rg-time-range input {
+  flex: 1;
+  min-width: 0;
+}
+
+.rg-time-range span {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+/* +/- Button Controls for Random Game - 2 Column Layout */
+.rg-settings-group {
+  background: var(--bg-tertiary);
+  border-radius: var(--border-radius-sm);
+  padding: 0.5rem;
+}
+
+.rg-group-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  text-align: center;
+  margin-bottom: 0.4rem;
+}
+
+.rg-two-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.rg-setting-compact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.rg-label-small {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.rg-plusminus-compact {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.rg-btn-sm {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  background: var(--primary);
+  color: white;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rg-btn-sm:hover:not(:disabled) {
+  background: var(--primary-light);
+  transform: scale(1.05);
+}
+
+.rg-btn-sm:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.rg-btn-sm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rg-value-sm {
+  min-width: 50px;
+  text-align: center;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.random-game-btn {
+  width: 100%;
+  padding: 1rem;
+  border: none;
+  border-radius: var(--border-radius);
+  font-size: 1.25rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.random-game-btn.start {
+  background: linear-gradient(135deg, var(--success), #059669);
+  color: white;
+}
+
+.random-game-btn.start:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+.random-game-btn.stop {
+  background: linear-gradient(135deg, var(--danger), #dc2626);
+  color: white;
+  animation: pulse 1s infinite;
+}
+
+.random-game-btn.stop:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
 /* ===== Mobile Responsive ===== */
 @media (max-width: 768px) {
   .app-main.full-width {
@@ -2772,6 +3021,11 @@ body {
   .zap-buttons-row {
     flex-direction: column;
   }
+
+  /* Random Game responsive */
+  .random-game-checkboxes {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (max-width: 480px) {
@@ -2781,5 +3035,17 @@ body {
 
   .timer-slider-column {
     grid-column: 1 / -1;
+  }
+
+  .random-game-checkboxes {
+    grid-template-columns: 1fr;
+  }
+
+  .rg-time-range {
+    flex-direction: column;
+  }
+
+  .rg-time-range span {
+    display: none;
   }
 }
