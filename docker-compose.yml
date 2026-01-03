@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  # Production application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fancy-steel-webapp
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - CONFIG_PATH=/config
+    volumes:
+      - fancy-steel-config:/config
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Development with hot reload
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: fancy-steel-dev
+    ports:
+      - "3000:3000"
+      - "5000:5000"
+    volumes:
+      - ./frontend:/app/frontend
+      - ./backend:/app/backend
+      - ./config:/config
+      - /app/frontend/node_modules
+      - /app/backend/node_modules
+    environment:
+      - NODE_ENV=development
+      - CONFIG_PATH=/config
+      - CHOKIDAR_USEPOLLING=true
+    profiles:
+      - dev
+
+volumes:
+  fancy-steel-config:
+    name: fancy-steel-config

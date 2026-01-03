@@ -1,0 +1,35 @@
+# ===========================================
+# Fancy Steel Web App Mode - Development Dockerfile
+# Hot reload enabled for development
+# ===========================================
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Set environment
+ENV CONFIG_PATH=/config
+
+# Install dependencies for both frontend and backend
+COPY frontend/package*.json ./frontend/
+COPY backend/package*.json ./backend/
+
+# Install all dependencies (including devDependencies)
+RUN cd frontend && npm install
+RUN cd backend && npm install
+
+# Copy source code
+COPY frontend/ ./frontend/
+COPY backend/ ./backend/
+
+# Create config directory
+RUN mkdir -p /config
+
+# Expose ports for frontend dev server and backend
+EXPOSE 3000 5000
+
+# Volume for persistent configuration
+VOLUME ["/config"]
+
+# Start both frontend and backend in development mode
+CMD ["sh", "-c", "cd /app/backend && npm run dev & cd /app/frontend && npm run dev"]
