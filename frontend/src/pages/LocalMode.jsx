@@ -443,29 +443,54 @@ function LocalMode() {
   }
 
   // Helper functions for +/- buttons that update AND save config
+  // Use functional updates to avoid stale closure issues with hold-to-repeat
   const updateTimerMin = (delta) => {
-    const newValue = Math.max(10, randomGameConfig.timerMin + delta)
-    updateRandomGameConfig('timerMin', newValue)
+    setRandomGameConfig(prev => {
+      const newValue = Math.max(10, prev.timerMin + delta)
+      const newConfig = { ...prev, timerMin: newValue }
+      saveRandomGameConfig(newConfig)
+      return newConfig
+    })
   }
   const updateTimerMax = (delta) => {
-    const newValue = Math.max(10, randomGameConfig.timerMax + delta)
-    updateRandomGameConfig('timerMax', newValue)
+    setRandomGameConfig(prev => {
+      const newValue = Math.max(10, prev.timerMax + delta)
+      const newConfig = { ...prev, timerMax: newValue }
+      saveRandomGameConfig(newConfig)
+      return newConfig
+    })
   }
   const updateStepMin = (delta) => {
-    const newValue = Math.max(5, randomGameConfig.stepDurationMin + delta)
-    updateRandomGameConfig('stepDurationMin', newValue)
+    setRandomGameConfig(prev => {
+      const newValue = Math.max(5, prev.stepDurationMin + delta)
+      const newConfig = { ...prev, stepDurationMin: newValue }
+      saveRandomGameConfig(newConfig)
+      return newConfig
+    })
   }
   const updateStepMax = (delta) => {
-    const newValue = Math.max(5, randomGameConfig.stepDurationMax + delta)
-    updateRandomGameConfig('stepDurationMax', newValue)
+    setRandomGameConfig(prev => {
+      const newValue = Math.max(5, prev.stepDurationMax + delta)
+      const newConfig = { ...prev, stepDurationMax: newValue }
+      saveRandomGameConfig(newConfig)
+      return newConfig
+    })
   }
   const updateGameDuration = (delta) => {
-    const newValue = Math.max(60, randomGameConfig.gameDuration + delta)
-    updateRandomGameConfig('gameDuration', newValue)
+    setRandomGameConfig(prev => {
+      const newValue = Math.max(60, prev.gameDuration + delta)
+      const newConfig = { ...prev, gameDuration: newValue }
+      saveRandomGameConfig(newConfig)
+      return newConfig
+    })
   }
   const updateMaxPower = (delta) => {
-    const newValue = Math.min(100, Math.max(0, randomGameConfig.maxPower + delta))
-    updateRandomGameConfig('maxPower', newValue)
+    setRandomGameConfig(prev => {
+      const newValue = Math.min(100, Math.max(0, prev.maxPower + delta))
+      const newConfig = { ...prev, maxPower: newValue }
+      saveRandomGameConfig(newConfig)
+      return newConfig
+    })
   }
 
   // Hold-to-repeat handlers for +/- buttons
@@ -479,6 +504,17 @@ function LocalMode() {
       clearInterval(holdIntervalRef.current)
       holdIntervalRef.current = null
     }
+  }
+
+  // Touch-specific handlers to prevent scrolling
+  const handleTouchStart = (action) => (e) => {
+    e.preventDefault()
+    startHold(action)
+  }
+
+  const handleTouchEnd = (e) => {
+    e.preventDefault()
+    stopHold()
   }
 
   // Helper to set power to a specific value using the actual UI buttons
@@ -610,13 +646,20 @@ function LocalMode() {
         break
       }
       case 'zap': {
-        // Random power must be multiple of 5 (device works in steps of 5%)
-        const maxSteps = Math.floor(randomGameConfig.maxPower / 5)
-        const randomPower = Math.floor(Math.random() * (maxSteps + 1)) * 5
-        await setPowerToValue(randomPower)
-        await new Promise(resolve => setTimeout(resolve, 200))
-        await handleZapClick()
-        addNotification(`Random: Zap at ${randomPower}%`, 'warning')
+        // Only change power if enablePower is checked, otherwise zap at current power
+        if (randomGameConfig.enablePower) {
+          // Random power must be multiple of 5 (device works in steps of 5%)
+          const maxSteps = Math.floor(randomGameConfig.maxPower / 5)
+          const randomPower = Math.floor(Math.random() * (maxSteps + 1)) * 5
+          await setPowerToValue(randomPower)
+          await new Promise(resolve => setTimeout(resolve, 200))
+          await handleZapClick()
+          addNotification(`Random: Zap at ${randomPower}%`, 'warning')
+        } else {
+          // Zap at current power level (no power change)
+          await handleZapClick()
+          addNotification(`Random: Zap at current power`, 'warning')
+        }
         break
       }
       case 'beep': {
@@ -971,96 +1014,116 @@ function LocalMode() {
 
           {/* Checkboxes in 3 columns */}
           <div className="random-game-checkboxes">
-            <label className="rg-checkbox">
-              <input
-                type="checkbox"
-                checked={randomGameConfig.enablePetTraining}
-                onChange={(e) => updateRandomGameConfig('enablePetTraining', e.target.checked)}
-                disabled={isRandomGameRunning}
-              />
-              <span>Pet Training</span>
-            </label>
-            <label className="rg-checkbox">
-              <input
-                type="checkbox"
-                checked={randomGameConfig.enablePetFast}
-                onChange={(e) => updateRandomGameConfig('enablePetFast', e.target.checked)}
-                disabled={isRandomGameRunning}
-              />
-              <span>Pet Fast</span>
-            </label>
-            <label className="rg-checkbox">
-              <input
-                type="checkbox"
-                checked={randomGameConfig.enablePetFreeze}
-                onChange={(e) => updateRandomGameConfig('enablePetFreeze', e.target.checked)}
-                disabled={isRandomGameRunning}
-              />
-              <span>Pet Freeze</span>
-            </label>
-            <label className="rg-checkbox">
-              <input
-                type="checkbox"
-                checked={randomGameConfig.enableSleep}
-                onChange={(e) => updateRandomGameConfig('enableSleep', e.target.checked)}
-                disabled={isRandomGameRunning}
-              />
-              <span>Sleep Depriv.</span>
-            </label>
-            <label className="rg-checkbox">
-              <input
-                type="checkbox"
-                checked={randomGameConfig.enableRandom}
-                onChange={(e) => updateRandomGameConfig('enableRandom', e.target.checked)}
-                disabled={isRandomGameRunning}
-              />
-              <span>Random</span>
-            </label>
-            <label className="rg-checkbox">
-              <input
-                type="checkbox"
-                checked={randomGameConfig.enableBuzzer}
-                onChange={(e) => updateRandomGameConfig('enableBuzzer', e.target.checked)}
-                disabled={isRandomGameRunning}
-              />
-              <span>Buzzer</span>
-            </label>
-            <label className="rg-checkbox">
-              <input
-                type="checkbox"
-                checked={randomGameConfig.enableTimer}
-                onChange={(e) => updateRandomGameConfig('enableTimer', e.target.checked)}
-                disabled={isRandomGameRunning}
-              />
-              <span>Timer</span>
-            </label>
-            <label className="rg-checkbox">
-              <input
-                type="checkbox"
-                checked={randomGameConfig.enableZap}
-                onChange={(e) => updateRandomGameConfig('enableZap', e.target.checked)}
-                disabled={isRandomGameRunning}
-              />
-              <span>Zap</span>
-            </label>
-            <label className="rg-checkbox">
-              <input
-                type="checkbox"
-                checked={randomGameConfig.enableBeep}
-                onChange={(e) => updateRandomGameConfig('enableBeep', e.target.checked)}
-                disabled={isRandomGameRunning}
-              />
-              <span>Beep</span>
-            </label>
-            <label className="rg-checkbox">
-              <input
-                type="checkbox"
-                checked={randomGameConfig.enablePower}
-                onChange={(e) => updateRandomGameConfig('enablePower', e.target.checked)}
-                disabled={isRandomGameRunning}
-              />
-              <span>Power</span>
-            </label>
+            <Tooltip text={tooltips.randomGame?.enablePetTraining} delay={tooltips.delay}>
+              <label className="rg-checkbox">
+                <input
+                  type="checkbox"
+                  checked={randomGameConfig.enablePetTraining}
+                  onChange={(e) => updateRandomGameConfig('enablePetTraining', e.target.checked)}
+                  disabled={isRandomGameRunning}
+                />
+                <span>Pet Training</span>
+              </label>
+            </Tooltip>
+            <Tooltip text={tooltips.randomGame?.enablePetFast} delay={tooltips.delay}>
+              <label className="rg-checkbox">
+                <input
+                  type="checkbox"
+                  checked={randomGameConfig.enablePetFast}
+                  onChange={(e) => updateRandomGameConfig('enablePetFast', e.target.checked)}
+                  disabled={isRandomGameRunning}
+                />
+                <span>Pet Fast</span>
+              </label>
+            </Tooltip>
+            <Tooltip text={tooltips.randomGame?.enablePetFreeze} delay={tooltips.delay}>
+              <label className="rg-checkbox">
+                <input
+                  type="checkbox"
+                  checked={randomGameConfig.enablePetFreeze}
+                  onChange={(e) => updateRandomGameConfig('enablePetFreeze', e.target.checked)}
+                  disabled={isRandomGameRunning}
+                />
+                <span>Pet Freeze</span>
+              </label>
+            </Tooltip>
+            <Tooltip text={tooltips.randomGame?.enableSleep} delay={tooltips.delay}>
+              <label className="rg-checkbox">
+                <input
+                  type="checkbox"
+                  checked={randomGameConfig.enableSleep}
+                  onChange={(e) => updateRandomGameConfig('enableSleep', e.target.checked)}
+                  disabled={isRandomGameRunning}
+                />
+                <span>Sleep Depriv.</span>
+              </label>
+            </Tooltip>
+            <Tooltip text={tooltips.randomGame?.enableRandom} delay={tooltips.delay}>
+              <label className="rg-checkbox">
+                <input
+                  type="checkbox"
+                  checked={randomGameConfig.enableRandom}
+                  onChange={(e) => updateRandomGameConfig('enableRandom', e.target.checked)}
+                  disabled={isRandomGameRunning}
+                />
+                <span>Random</span>
+              </label>
+            </Tooltip>
+            <Tooltip text={tooltips.randomGame?.enableBuzzer} delay={tooltips.delay}>
+              <label className="rg-checkbox">
+                <input
+                  type="checkbox"
+                  checked={randomGameConfig.enableBuzzer}
+                  onChange={(e) => updateRandomGameConfig('enableBuzzer', e.target.checked)}
+                  disabled={isRandomGameRunning}
+                />
+                <span>Buzzer</span>
+              </label>
+            </Tooltip>
+            <Tooltip text={tooltips.randomGame?.enableTimer} delay={tooltips.delay}>
+              <label className="rg-checkbox">
+                <input
+                  type="checkbox"
+                  checked={randomGameConfig.enableTimer}
+                  onChange={(e) => updateRandomGameConfig('enableTimer', e.target.checked)}
+                  disabled={isRandomGameRunning}
+                />
+                <span>Timer</span>
+              </label>
+            </Tooltip>
+            <Tooltip text={tooltips.randomGame?.enableZap} delay={tooltips.delay}>
+              <label className="rg-checkbox">
+                <input
+                  type="checkbox"
+                  checked={randomGameConfig.enableZap}
+                  onChange={(e) => updateRandomGameConfig('enableZap', e.target.checked)}
+                  disabled={isRandomGameRunning}
+                />
+                <span>Zap</span>
+              </label>
+            </Tooltip>
+            <Tooltip text={tooltips.randomGame?.enableBeep} delay={tooltips.delay}>
+              <label className="rg-checkbox">
+                <input
+                  type="checkbox"
+                  checked={randomGameConfig.enableBeep}
+                  onChange={(e) => updateRandomGameConfig('enableBeep', e.target.checked)}
+                  disabled={isRandomGameRunning}
+                />
+                <span>Beep</span>
+              </label>
+            </Tooltip>
+            <Tooltip text={tooltips.randomGame?.enablePower} delay={tooltips.delay}>
+              <label className="rg-checkbox">
+                <input
+                  type="checkbox"
+                  checked={randomGameConfig.enablePower}
+                  onChange={(e) => updateRandomGameConfig('enablePower', e.target.checked)}
+                  disabled={isRandomGameRunning}
+                />
+                <span>Power</span>
+              </label>
+            </Tooltip>
           </div>
 
           {/* Settings with +/- buttons - 2 column layout with hold-to-repeat */}
@@ -1069,22 +1132,26 @@ function LocalMode() {
             <div className="rg-settings-group">
               <div className="rg-group-label">Timer</div>
               <div className="rg-two-columns">
-                <div className="rg-setting-compact">
-                  <span className="rg-label-small">Min</span>
-                  <div className="rg-plusminus-compact">
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateTimerMin(-10))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateTimerMin(-10))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
-                    <span className="rg-value-sm">{formatTime(randomGameConfig.timerMin)}</span>
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateTimerMin(10))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateTimerMin(10))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                <Tooltip text={tooltips.randomGame?.timerMin} delay={tooltips.delay}>
+                  <div className="rg-setting-compact">
+                    <span className="rg-label-small">Min</span>
+                    <div className="rg-plusminus-compact">
+                      <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateTimerMin(-10))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={handleTouchStart(() => updateTimerMin(-10))} onTouchEnd={handleTouchEnd} disabled={isRandomGameRunning}>−</button>
+                      <span className="rg-value-sm">{formatTime(randomGameConfig.timerMin)}</span>
+                      <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateTimerMin(10))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={handleTouchStart(() => updateTimerMin(10))} onTouchEnd={handleTouchEnd} disabled={isRandomGameRunning}>+</button>
+                    </div>
                   </div>
-                </div>
-                <div className="rg-setting-compact">
-                  <span className="rg-label-small">Max</span>
-                  <div className="rg-plusminus-compact">
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateTimerMax(-10))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateTimerMax(-10))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
-                    <span className="rg-value-sm">{formatTime(randomGameConfig.timerMax)}</span>
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateTimerMax(10))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateTimerMax(10))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                </Tooltip>
+                <Tooltip text={tooltips.randomGame?.timerMax} delay={tooltips.delay}>
+                  <div className="rg-setting-compact">
+                    <span className="rg-label-small">Max</span>
+                    <div className="rg-plusminus-compact">
+                      <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateTimerMax(-10))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={handleTouchStart(() => updateTimerMax(-10))} onTouchEnd={handleTouchEnd} disabled={isRandomGameRunning}>−</button>
+                      <span className="rg-value-sm">{formatTime(randomGameConfig.timerMax)}</span>
+                      <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateTimerMax(10))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={handleTouchStart(() => updateTimerMax(10))} onTouchEnd={handleTouchEnd} disabled={isRandomGameRunning}>+</button>
+                    </div>
                   </div>
-                </div>
+                </Tooltip>
               </div>
             </div>
 
@@ -1092,22 +1159,26 @@ function LocalMode() {
             <div className="rg-settings-group">
               <div className="rg-group-label">Step</div>
               <div className="rg-two-columns">
-                <div className="rg-setting-compact">
-                  <span className="rg-label-small">Min</span>
-                  <div className="rg-plusminus-compact">
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateStepMin(-5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateStepMin(-5))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
-                    <span className="rg-value-sm">{formatTime(randomGameConfig.stepDurationMin)}</span>
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateStepMin(5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateStepMin(5))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                <Tooltip text={tooltips.randomGame?.stepMin} delay={tooltips.delay}>
+                  <div className="rg-setting-compact">
+                    <span className="rg-label-small">Min</span>
+                    <div className="rg-plusminus-compact">
+                      <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateStepMin(-5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={handleTouchStart(() => updateStepMin(-5))} onTouchEnd={handleTouchEnd} disabled={isRandomGameRunning}>−</button>
+                      <span className="rg-value-sm">{formatTime(randomGameConfig.stepDurationMin)}</span>
+                      <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateStepMin(5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={handleTouchStart(() => updateStepMin(5))} onTouchEnd={handleTouchEnd} disabled={isRandomGameRunning}>+</button>
+                    </div>
                   </div>
-                </div>
-                <div className="rg-setting-compact">
-                  <span className="rg-label-small">Max</span>
-                  <div className="rg-plusminus-compact">
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateStepMax(-5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateStepMax(-5))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
-                    <span className="rg-value-sm">{formatTime(randomGameConfig.stepDurationMax)}</span>
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateStepMax(5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateStepMax(5))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                </Tooltip>
+                <Tooltip text={tooltips.randomGame?.stepMax} delay={tooltips.delay}>
+                  <div className="rg-setting-compact">
+                    <span className="rg-label-small">Max</span>
+                    <div className="rg-plusminus-compact">
+                      <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateStepMax(-5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={handleTouchStart(() => updateStepMax(-5))} onTouchEnd={handleTouchEnd} disabled={isRandomGameRunning}>−</button>
+                      <span className="rg-value-sm">{formatTime(randomGameConfig.stepDurationMax)}</span>
+                      <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateStepMax(5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={handleTouchStart(() => updateStepMax(5))} onTouchEnd={handleTouchEnd} disabled={isRandomGameRunning}>+</button>
+                    </div>
                   </div>
-                </div>
+                </Tooltip>
               </div>
             </div>
 
@@ -1115,33 +1186,39 @@ function LocalMode() {
             <div className="rg-settings-group">
               <div className="rg-group-label">Settings</div>
               <div className="rg-two-columns">
-                <div className="rg-setting-compact">
-                  <span className="rg-label-small">Duration</span>
-                  <div className="rg-plusminus-compact">
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateGameDuration(-60))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateGameDuration(-60))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
-                    <span className="rg-value-sm">{formatTime(randomGameConfig.gameDuration)}</span>
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateGameDuration(60))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateGameDuration(60))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                <Tooltip text={tooltips.randomGame?.duration} delay={tooltips.delay}>
+                  <div className="rg-setting-compact">
+                    <span className="rg-label-small">Duration</span>
+                    <div className="rg-plusminus-compact">
+                      <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateGameDuration(-60))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={handleTouchStart(() => updateGameDuration(-60))} onTouchEnd={handleTouchEnd} disabled={isRandomGameRunning}>−</button>
+                      <span className="rg-value-sm">{formatTime(randomGameConfig.gameDuration)}</span>
+                      <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateGameDuration(60))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={handleTouchStart(() => updateGameDuration(60))} onTouchEnd={handleTouchEnd} disabled={isRandomGameRunning}>+</button>
+                    </div>
                   </div>
-                </div>
-                <div className="rg-setting-compact">
-                  <span className="rg-label-small">Max Power</span>
-                  <div className="rg-plusminus-compact">
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateMaxPower(-5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateMaxPower(-5))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>−</button>
-                    <span className="rg-value-sm">{randomGameConfig.maxPower}%</span>
-                    <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateMaxPower(5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={() => startHold(() => updateMaxPower(5))} onTouchEnd={stopHold} disabled={isRandomGameRunning}>+</button>
+                </Tooltip>
+                <Tooltip text={tooltips.randomGame?.maxPower} delay={tooltips.delay}>
+                  <div className="rg-setting-compact">
+                    <span className="rg-label-small">Max Power</span>
+                    <div className="rg-plusminus-compact">
+                      <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateMaxPower(-5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={handleTouchStart(() => updateMaxPower(-5))} onTouchEnd={handleTouchEnd} disabled={isRandomGameRunning}>−</button>
+                      <span className="rg-value-sm">{randomGameConfig.maxPower}%</span>
+                      <button className="rg-btn-sm" onMouseDown={() => startHold(() => updateMaxPower(5))} onMouseUp={stopHold} onMouseLeave={stopHold} onTouchStart={handleTouchStart(() => updateMaxPower(5))} onTouchEnd={handleTouchEnd} disabled={isRandomGameRunning}>+</button>
+                    </div>
                   </div>
-                </div>
+                </Tooltip>
               </div>
             </div>
           </div>
 
           {/* Start/Stop button */}
-          <button
-            className={`random-game-btn ${isRandomGameRunning ? 'stop' : 'start'}`}
-            onClick={handleRandomGameToggle}
-          >
-            {isRandomGameRunning ? '⏹ STOP' : '▶ START'}
-          </button>
+          <Tooltip text={tooltips.randomGame?.start} delay={tooltips.delay}>
+            <button
+              className={`random-game-btn ${isRandomGameRunning ? 'stop' : 'start'}`}
+              onClick={handleRandomGameToggle}
+            >
+              {isRandomGameRunning ? '⏹ STOP' : '▶ START'}
+            </button>
+          </Tooltip>
         </div>
       </Card>
     )

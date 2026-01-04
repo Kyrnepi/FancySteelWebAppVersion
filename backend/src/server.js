@@ -249,8 +249,23 @@ const defaultTooltips = {
     set: "Set new tilt value"
   },
   randomGame: {
-    start: "Start the random game with selected options",
-    stop: "Stop the current random game"
+    start: "Start/Stop the random game",
+    enablePetTraining: "Include Pet Training mode in random actions",
+    enablePetFast: "Include Pet Fast mode in random actions",
+    enablePetFreeze: "Include Pet Freeze mode in random actions",
+    enableSleep: "Include Sleep Deprivation mode in random actions",
+    enableRandom: "Include Random mode in random actions",
+    enableBuzzer: "Include buzzer toggle in random actions",
+    enableTimer: "Include timer changes in random actions",
+    enableZap: "Include zap in random actions",
+    enableBeep: "Include beep in random actions",
+    enablePower: "Include power changes in random actions (also affects zap power)",
+    timerMin: "Minimum timer value for random timer action",
+    timerMax: "Maximum timer value for random timer action",
+    stepMin: "Minimum time between random actions",
+    stepMax: "Maximum time between random actions",
+    duration: "Total duration of the random game",
+    maxPower: "Maximum power level for random power/zap actions"
   }
 };
 

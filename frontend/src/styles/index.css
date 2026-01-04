@@ -2528,6 +2528,20 @@ body {
   }
 }
 
+/* Tooltip wrapper fixes for Random Game tile */
+.random-game-checkboxes .tooltip-wrapper {
+  display: block;
+}
+
+.rg-two-columns .tooltip-wrapper {
+  flex: 1;
+  display: block;
+}
+
+.rg-setting-compact .tooltip-wrapper {
+  display: contents;
+}
+
 /* ===== Power + ZAP Merged Tile ===== */
 .power-zap-control {
   display: flex;
@@ -2918,6 +2932,14 @@ body {
   cursor: not-allowed;
 }
 
+/* Ensure touch events work properly on mobile for hold-to-repeat */
+.rg-btn-sm {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .rg-value-sm {
   min-width: 50px;
   text-align: center;
@@ -3017,19 +3039,13 @@ body {
     font-size: 1rem;
   }
 
-  /* Beep/Zap buttons stack on very small screens */
-  .zap-buttons-row {
-    flex-direction: column;
-    align-items: center;
-  }
-
+  /* Beep/Zap buttons stay side by side on mobile - only reduce padding */
   .beep-button,
   .zap-button {
-    max-width: 100%;
-    width: 100%;
+    padding: 0.75rem;
   }
 
-  /* Random Game responsive */
+  /* Random Game responsive - keep 2 columns */
   .random-game-checkboxes {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -3044,8 +3060,9 @@ body {
     grid-column: 1 / -1;
   }
 
+  /* Random Game checkboxes stay 2 columns on mobile */
   .random-game-checkboxes {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .rg-time-range {
@@ -3054,5 +3071,23 @@ body {
 
   .rg-time-range span {
     display: none;
+  }
+}
+
+/* Only stack beep/zap on very narrow screens */
+@media (max-width: 320px) {
+  .zap-buttons-row {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .beep-button,
+  .zap-button {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .random-game-checkboxes {
+    grid-template-columns: 1fr;
   }
 }
