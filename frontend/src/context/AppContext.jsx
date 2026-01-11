@@ -5,6 +5,12 @@ const AppContext = createContext()
 // API base URL - uses relative path since frontend is served by same server
 const API_BASE = '/api'
 
+// Helper to get auth token
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('authToken')
+  return token ? { 'Authorization': `Bearer ${token}` } : {}
+}
+
 const DEFAULT_LOCAL_IP = '192.168.4.1'
 
 const initialState = {
@@ -125,7 +131,10 @@ export function AppProvider({ children }) {
   // Load device configuration from backend
   const loadDeviceConfig = async () => {
     try {
-      const response = await fetch(`${API_BASE}/device/config`)
+      const response = await fetch(`${API_BASE}/device/config`, {
+        headers: getAuthHeaders()
+      })
+      if (!response.ok) return
       const data = await response.json()
       if (data.success && data.config) {
         dispatch({
@@ -173,7 +182,7 @@ export function AppProvider({ children }) {
     try {
       await fetch(`${API_BASE}/device/config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           deviceIP: config.localIP || config.deviceIP,
           connectionMode: config.connectionMode,
@@ -208,7 +217,10 @@ export function AppProvider({ children }) {
   // Check connection to device via backend proxy
   const checkConnection = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/device/check`)
+      const response = await fetch(`${API_BASE}/device/check`, {
+        headers: getAuthHeaders()
+      })
+      if (!response.ok) return false
       const data = await response.json()
 
       dispatch({ type: 'SET_CONNECTION', payload: data.connected })
@@ -238,7 +250,9 @@ export function AppProvider({ children }) {
       if (command.startsWith('/')) {
         // Direct device path - use the proxy endpoint
         const devicePath = command.substring(1) // Remove leading /
-        response = await fetch(`${API_BASE}/device/proxy/${devicePath}`)
+        response = await fetch(`${API_BASE}/device/proxy/${devicePath}`, {
+          headers: getAuthHeaders()
+        })
       } else {
         // Query parameter style (legacy)
         const queryParams = new URLSearchParams({
@@ -246,7 +260,14 @@ export function AppProvider({ children }) {
           cmd: command,
           power: state.power
         })
-        response = await fetch(`${API_BASE}/device/tx?${queryParams.toString()}`)
+        response = await fetch(`${API_BASE}/device/tx?${queryParams.toString()}`, {
+          headers: getAuthHeaders()
+        })
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        return { success: false, error: errorData.error || 'Request failed' }
       }
 
       const data = await response.json()
@@ -272,12 +293,18 @@ export function AppProvider({ children }) {
     try {
       const response = await fetch(`${API_BASE}/device/tx`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           ...params,
           power: state.power
         })
       })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        return { success: false, error: errorData.error || 'Request failed' }
+      }
+
       const data = await response.json()
 
       if (data.success) {
@@ -312,9 +339,15 @@ export function AppProvider({ children }) {
     try {
       const response = await fetch(`${API_BASE}/device/config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify(config)
       })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        return { success: false, error: errorData.error || 'Request failed' }
+      }
+
       const data = await response.json()
 
       if (data.success) {

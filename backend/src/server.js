@@ -4,6 +4,9 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 
+// Import authentication module
+const auth = require('./auth');
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 const CONFIG_PATH = process.env.CONFIG_PATH || '/config';
@@ -13,6 +16,9 @@ const STATE_FILE = path.join(CONFIG_PATH, 'state.json');
 // Default device IP (the device on the local network)
 const DEFAULT_DEVICE_IP = '192.168.4.1';
 const DEVICE_TIMEOUT = 5000; // 5 seconds timeout for device requests
+
+// Initialize admin user from environment variables
+auth.initializeAdmin();
 
 // Middleware
 app.use(cors());
@@ -170,16 +176,16 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Get device state
-app.get('/api/state', (req, res) => {
+// Get device state (requires auth)
+app.get('/api/state', auth.authMiddleware, (req, res) => {
   res.json({
     success: true,
     data: deviceState
   });
 });
 
-// Update device state
-app.post('/api/state', (req, res) => {
+// Update device state (requires auth)
+app.post('/api/state', auth.authMiddleware, (req, res) => {
   const updates = req.body;
   deviceState = { ...deviceState, ...updates };
   saveState(deviceState);
@@ -190,16 +196,16 @@ app.post('/api/state', (req, res) => {
   });
 });
 
-// Get configuration
-app.get('/api/config', (req, res) => {
+// Get configuration (requires auth)
+app.get('/api/config', auth.authMiddleware, (req, res) => {
   res.json({
     success: true,
     data: appConfig
   });
 });
 
-// Update configuration
-app.post('/api/config', (req, res) => {
+// Update configuration (requires auth)
+app.post('/api/config', auth.authMiddleware, (req, res) => {
   const updates = req.body;
   appConfig = { ...appConfig, ...updates };
   const saved = saveConfig(appConfig);
@@ -211,9 +217,21 @@ app.post('/api/config', (req, res) => {
   });
 });
 
-// Tiles configuration file
+// Tiles configuration file (global - kept for backwards compatibility)
 const TILES_CONFIG_FILE = path.join(CONFIG_PATH, 'tiles.json');
 const TOOLTIPS_CONFIG_FILE = path.join(CONFIG_PATH, 'tooltips.json');
+
+// User-specific config directory
+const USERS_CONFIG_PATH = path.join(CONFIG_PATH, 'users');
+
+// Helper to get user-specific config file path
+function getUserConfigPath(username, filename) {
+  const userDir = path.join(USERS_CONFIG_PATH, username);
+  if (!fs.existsSync(userDir)) {
+    fs.mkdirSync(userDir, { recursive: true });
+  }
+  return path.join(userDir, filename);
+}
 
 // Default tooltips configuration
 const defaultTooltips = {
@@ -269,11 +287,12 @@ const defaultTooltips = {
   }
 };
 
-// Get tiles order
-app.get('/api/config/tiles', (req, res) => {
+// Get tiles order (requires auth) - per-user storage
+app.get('/api/config/tiles', auth.authMiddleware, (req, res) => {
   try {
-    if (fs.existsSync(TILES_CONFIG_FILE)) {
-      const data = fs.readFileSync(TILES_CONFIG_FILE, 'utf8');
+    const userTilesFile = getUserConfigPath(req.user.username, 'tiles.json');
+    if (fs.existsSync(userTilesFile)) {
+      const data = fs.readFileSync(userTilesFile, 'utf8');
       const tilesConfig = JSON.parse(data);
       res.json(tilesConfig);
     } else {
@@ -285,17 +304,13 @@ app.get('/api/config/tiles', (req, res) => {
   }
 });
 
-// Save tiles order and theme
-app.post('/api/config/tiles', (req, res) => {
+// Save tiles order and theme (requires auth) - per-user storage
+app.post('/api/config/tiles', auth.authMiddleware, (req, res) => {
   try {
     const { order, theme } = req.body;
+    const userTilesFile = getUserConfigPath(req.user.username, 'tiles.json');
 
-    // Ensure config directory exists
-    if (!fs.existsSync(CONFIG_PATH)) {
-      fs.mkdirSync(CONFIG_PATH, { recursive: true });
-    }
-
-    fs.writeFileSync(TILES_CONFIG_FILE, JSON.stringify({ order, theme }, null, 2));
+    fs.writeFileSync(userTilesFile, JSON.stringify({ order, theme }, null, 2));
     res.json({ success: true, message: 'Tiles config saved' });
   } catch (error) {
     console.error('Failed to save tiles config:', error);
@@ -303,8 +318,8 @@ app.post('/api/config/tiles', (req, res) => {
   }
 });
 
-// Get tooltips configuration
-app.get('/api/config/tooltips', (req, res) => {
+// Get tooltips configuration (requires auth)
+app.get('/api/config/tooltips', auth.authMiddleware, (req, res) => {
   try {
     if (fs.existsSync(TOOLTIPS_CONFIG_FILE)) {
       const data = fs.readFileSync(TOOLTIPS_CONFIG_FILE, 'utf8');
@@ -321,8 +336,8 @@ app.get('/api/config/tooltips', (req, res) => {
   }
 });
 
-// Save tooltips configuration
-app.post('/api/config/tooltips', (req, res) => {
+// Save tooltips configuration (requires auth)
+app.post('/api/config/tooltips', auth.authMiddleware, (req, res) => {
   try {
     const tooltips = req.body;
 
@@ -361,16 +376,16 @@ const defaultRandomGameConfig = {
   stepDurationMax: 60
 };
 
-// Get random game configuration
-app.get('/api/config/randomgame', (req, res) => {
+// Get random game configuration (requires auth + random_game permission) - per-user storage
+app.get('/api/config/randomgame', auth.authMiddleware, auth.requirePermission('random_game'), (req, res) => {
   try {
-    if (fs.existsSync(RANDOMGAME_CONFIG_FILE)) {
-      const data = fs.readFileSync(RANDOMGAME_CONFIG_FILE, 'utf8');
+    const userRandomGameFile = getUserConfigPath(req.user.username, 'randomgame.json');
+    if (fs.existsSync(userRandomGameFile)) {
+      const data = fs.readFileSync(userRandomGameFile, 'utf8');
       const config = JSON.parse(data);
       res.json(config);
     } else {
-      // Create default config file
-      fs.writeFileSync(RANDOMGAME_CONFIG_FILE, JSON.stringify(defaultRandomGameConfig, null, 2));
+      // Return default config (don't create file until user saves)
       res.json(defaultRandomGameConfig);
     }
   } catch (error) {
@@ -379,17 +394,13 @@ app.get('/api/config/randomgame', (req, res) => {
   }
 });
 
-// Save random game configuration
-app.post('/api/config/randomgame', (req, res) => {
+// Save random game configuration (requires auth + random_game permission) - per-user storage
+app.post('/api/config/randomgame', auth.authMiddleware, auth.requirePermission('random_game'), (req, res) => {
   try {
     const config = req.body;
+    const userRandomGameFile = getUserConfigPath(req.user.username, 'randomgame.json');
 
-    // Ensure config directory exists
-    if (!fs.existsSync(CONFIG_PATH)) {
-      fs.mkdirSync(CONFIG_PATH, { recursive: true });
-    }
-
-    fs.writeFileSync(RANDOMGAME_CONFIG_FILE, JSON.stringify(config, null, 2));
+    fs.writeFileSync(userRandomGameFile, JSON.stringify(config, null, 2));
     res.json({ success: true, message: 'Random game config saved' });
   } catch (error) {
     console.error('Failed to save random game config:', error);
@@ -397,8 +408,8 @@ app.post('/api/config/randomgame', (req, res) => {
   }
 });
 
-// Send command
-app.post('/api/command', (req, res) => {
+// Send command (requires auth)
+app.post('/api/command', auth.authMiddleware, (req, res) => {
   const { type, action, power, ...params } = req.body;
 
   console.log(`Command received: ${type}/${action}`, params);
@@ -442,8 +453,8 @@ app.post('/api/command', (req, res) => {
   });
 });
 
-// Toggle switch
-app.post('/api/toggle/:switch', (req, res) => {
+// Toggle switch (requires auth)
+app.post('/api/toggle/:switch', auth.authMiddleware, (req, res) => {
   const switchName = req.params.switch;
 
   if (switchName in deviceState) {
@@ -462,16 +473,22 @@ app.post('/api/toggle/:switch', (req, res) => {
   }
 });
 
-// Set power level
-app.post('/api/power', (req, res) => {
+// Set power level (requires auth + power_control permission with maxPower limit)
+app.post('/api/power', auth.authMiddleware, auth.requirePermission('power_control'), (req, res) => {
   const { level } = req.body;
 
+  // Apply maxPower limit from permissions
+  const maxPower = req.permissionLimits?.maxPower ?? 100;
+  const effectiveLevel = Math.min(level, maxPower);
+
   if (typeof level === 'number' && level >= 0 && level <= 100) {
-    deviceState.power = level;
+    deviceState.power = effectiveLevel;
     saveState(deviceState);
     res.json({
       success: true,
-      power: deviceState.power
+      power: deviceState.power,
+      limited: effectiveLevel < level,
+      maxPower: maxPower
     });
   } else {
     res.status(400).json({
@@ -481,8 +498,8 @@ app.post('/api/power', (req, res) => {
   }
 });
 
-// Set timer
-app.post('/api/timer', (req, res) => {
+// Set timer (requires auth + modes_timer permission)
+app.post('/api/timer', auth.authMiddleware, auth.requirePermission('modes_timer'), (req, res) => {
   const { value, enabled } = req.body;
 
   if (typeof value === 'number') {
@@ -503,29 +520,154 @@ app.post('/api/timer', (req, res) => {
   });
 });
 
-// Authentication (simulated)
+// =====================================================
+// AUTHENTICATION ROUTES
+// =====================================================
+
+// Login
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
 
-  // Simple validation (in production, use proper authentication)
-  if (username && password) {
-    appConfig.username = username;
-    saveConfig(appConfig);
-    res.json({
-      success: true,
-      token: 'simulated-jwt-token',
-      user: { username }
-    });
+  if (!username || !password) {
+    return res.status(400).json({ success: false, error: 'Username and password required' });
+  }
+
+  const result = auth.authenticateUser(username, password);
+
+  if (!result.success) {
+    return res.status(401).json({ success: false, error: result.error });
+  }
+
+  res.json({
+    success: true,
+    token: result.token,
+    user: result.user
+  });
+});
+
+// Get current user info
+app.get('/api/auth/me', auth.authMiddleware, (req, res) => {
+  res.json({
+    success: true,
+    user: req.user
+  });
+});
+
+// Verify token validity
+app.get('/api/auth/verify', auth.authMiddleware, (req, res) => {
+  res.json({
+    success: true,
+    valid: true,
+    user: req.user
+  });
+});
+
+// =====================================================
+// ADMIN ROUTES
+// =====================================================
+
+// Get all users (admin only)
+app.get('/api/admin/users', auth.authMiddleware, auth.adminMiddleware, (req, res) => {
+  const users = auth.getAllUsers();
+  res.json({ success: true, users });
+});
+
+// Create new user (admin only)
+app.post('/api/admin/users', auth.authMiddleware, auth.adminMiddleware, (req, res) => {
+  const { username, password, permissions } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ success: false, error: 'Username and password required' });
+  }
+
+  if (password.length < 4) {
+    return res.status(400).json({ success: false, error: 'Password must be at least 4 characters' });
+  }
+
+  const result = auth.createUser(username, password, permissions);
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json(result);
+});
+
+// Update user (admin only)
+app.put('/api/admin/users/:id', auth.authMiddleware, auth.adminMiddleware, (req, res) => {
+  const { id } = req.params;
+  const { username, permissions } = req.body;
+
+  const result = auth.updateUser(id, { username, permissions });
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json(result);
+});
+
+// Reset user password (admin only)
+app.post('/api/admin/users/:id/reset-password', auth.authMiddleware, auth.adminMiddleware, (req, res) => {
+  const { id } = req.params;
+  const { password } = req.body;
+
+  if (!password) {
+    return res.status(400).json({ success: false, error: 'New password required' });
+  }
+
+  if (password.length < 4) {
+    return res.status(400).json({ success: false, error: 'Password must be at least 4 characters' });
+  }
+
+  const result = auth.resetUserPassword(id, password);
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json(result);
+});
+
+// Delete user (admin only)
+app.delete('/api/admin/users/:id', auth.authMiddleware, auth.adminMiddleware, (req, res) => {
+  const { id } = req.params;
+
+  const result = auth.deleteUser(id);
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json(result);
+});
+
+// Get auth configuration (admin only)
+app.get('/api/admin/auth-config', auth.authMiddleware, auth.adminMiddleware, (req, res) => {
+  const config = auth.loadAuthConfig();
+  res.json({ success: true, config });
+});
+
+// Update auth configuration (admin only)
+app.put('/api/admin/auth-config', auth.authMiddleware, auth.adminMiddleware, (req, res) => {
+  const updates = req.body;
+  const currentConfig = auth.loadAuthConfig();
+  const newConfig = { ...currentConfig, ...updates };
+
+  if (auth.saveAuthConfig(newConfig)) {
+    res.json({ success: true, config: newConfig });
   } else {
-    res.status(401).json({
-      success: false,
-      error: 'Invalid credentials'
-    });
+    res.status(500).json({ success: false, error: 'Failed to save configuration' });
   }
 });
 
-// Reset to defaults
-app.post('/api/reset', (req, res) => {
+// Get default permissions template (admin only)
+app.get('/api/admin/default-permissions', auth.authMiddleware, auth.adminMiddleware, (req, res) => {
+  res.json({ success: true, permissions: auth.defaultPermissions });
+});
+
+// Reset to defaults (admin only)
+app.post('/api/reset', auth.authMiddleware, auth.adminMiddleware, (req, res) => {
   const { type } = req.body;
 
   if (type === 'state' || type === 'all') {
@@ -548,10 +690,86 @@ app.post('/api/reset', (req, res) => {
 // =====================================================
 // DEVICE PROXY ENDPOINTS
 // These endpoints proxy requests to the actual device
+// All device control routes require authentication
 // =====================================================
 
-// Check device connection
-app.get('/api/device/check', async (req, res) => {
+// Helper function to determine required permission from device path
+function getRequiredPermission(devicePath) {
+  const path = devicePath.toLowerCase();
+
+  // Power control commands
+  if (path.includes('/pw/') || path.includes('power')) {
+    return 'power_control';
+  }
+
+  // Zap and Beep (part of power control)
+  if (path.includes('/z1/') || path.includes('/b1/')) {
+    return 'power_control';
+  }
+
+  // Lock control
+  if (path.includes('/loc1/')) {
+    return 'lock_control';
+  }
+
+  // Modes and Timer
+  if (path.includes('/mode/') || path.includes('/s1/') || path.includes('/t1/')) {
+    return 'modes_timer';
+  }
+
+  // Release control
+  if (path.includes('/rel/') || path.includes('/t2/')) {
+    return 'release_control';
+  }
+
+  // Tilt control
+  if (path.includes('/dis/') || path.includes('tilt')) {
+    return 'tilt_control';
+  }
+
+  // Default - require authentication but no specific permission
+  return null;
+}
+
+// Middleware to check device command permissions
+function checkDevicePermission(req, res, next) {
+  // Get the device path from request
+  let devicePath = '';
+  if (req.params[0]) {
+    devicePath = req.params[0];
+  } else if (req.query) {
+    devicePath = JSON.stringify(req.query);
+  } else if (req.body) {
+    devicePath = JSON.stringify(req.body);
+  }
+
+  const requiredPermission = getRequiredPermission(devicePath);
+
+  if (!requiredPermission) {
+    // No specific permission required, just auth
+    return next();
+  }
+
+  // Admin has all permissions
+  if (req.user.isAdmin) {
+    return next();
+  }
+
+  const permission = req.user.permissions && req.user.permissions[requiredPermission];
+  if (!permission || !permission.enabled) {
+    return res.status(403).json({
+      success: false,
+      error: `Permission '${requiredPermission}' required for this action`
+    });
+  }
+
+  // Attach permission limits for power control
+  req.permissionLimits = permission;
+  next();
+}
+
+// Check device connection (requires auth)
+app.get('/api/device/check', auth.authMiddleware, async (req, res) => {
   const deviceIP = appConfig.deviceIP || DEFAULT_DEVICE_IP;
 
   try {
@@ -579,7 +797,7 @@ app.get('/api/device/check', async (req, res) => {
 });
 
 // Send command to device (GET request to /TX?...)
-app.get('/api/device/tx', async (req, res) => {
+app.get('/api/device/tx', auth.authMiddleware, checkDevicePermission, async (req, res) => {
   const deviceIP = appConfig.deviceIP || DEFAULT_DEVICE_IP;
 
   // Build query string from request query parameters
@@ -606,7 +824,7 @@ app.get('/api/device/tx', async (req, res) => {
 });
 
 // Send command to device (POST - converts body to query params)
-app.post('/api/device/tx', async (req, res) => {
+app.post('/api/device/tx', auth.authMiddleware, checkDevicePermission, async (req, res) => {
   const deviceIP = appConfig.deviceIP || DEFAULT_DEVICE_IP;
   const params = req.body;
 
@@ -634,7 +852,7 @@ app.post('/api/device/tx', async (req, res) => {
 });
 
 // Generic device proxy - forwards any path to the device
-app.all('/api/device/proxy/*', async (req, res) => {
+app.all('/api/device/proxy/*', auth.authMiddleware, checkDevicePermission, async (req, res) => {
   const deviceIP = appConfig.deviceIP || DEFAULT_DEVICE_IP;
 
   // Get the path after /api/device/proxy/
@@ -669,8 +887,8 @@ app.all('/api/device/proxy/*', async (req, res) => {
   }
 });
 
-// Update device IP configuration
-app.post('/api/device/config', (req, res) => {
+// Update device IP configuration (requires device_settings permission)
+app.post('/api/device/config', auth.authMiddleware, auth.requirePermission('device_settings'), (req, res) => {
   const { deviceIP, connectionMode, internetUrl, deviceSSID, devicePassword, deviceKey, deviceSerial } = req.body;
 
   if (deviceIP) appConfig.deviceIP = deviceIP;
@@ -697,8 +915,8 @@ app.post('/api/device/config', (req, res) => {
   });
 });
 
-// Get device configuration
-app.get('/api/device/config', (req, res) => {
+// Get device configuration (requires auth)
+app.get('/api/device/config', auth.authMiddleware, (req, res) => {
   res.json({
     success: true,
     config: {

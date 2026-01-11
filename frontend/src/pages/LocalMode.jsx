@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
+import { useAuth } from '../context/AuthContext'
 import Card from '../components/Card'
 import Toggle from '../components/Toggle'
 import Button from '../components/Button'
@@ -8,6 +9,16 @@ import Tooltip from '../components/Tooltip'
 
 // All available tiles (power includes zap, modes includes countdown)
 const ALL_TILES = ['power', 'lock', 'modes', 'release', 'tilt', 'randomGame']
+
+// Map tile IDs to permission keys
+const TILE_PERMISSIONS = {
+  power: 'power_control',
+  lock: 'lock_control',
+  modes: 'modes_timer',
+  release: 'release_control',
+  tilt: 'tilt_control',
+  randomGame: 'random_game'
+}
 
 // Available themes
 const THEMES = [
@@ -19,7 +30,7 @@ const THEMES = [
 ]
 
 function LocalMode() {
-  const { menuOpen, setMenuOpen } = useOutletContext()
+  const { menuOpen, setMenuOpen, isAdmin, handleAdminClick, handleLogout } = useOutletContext()
   const {
     state,
     setPower,
@@ -27,6 +38,13 @@ function LocalMode() {
     addNotification,
     checkConnection
   } = useApp()
+  const { hasPermission, getPermissionLimits, authFetch } = useAuth()
+
+  // Get permission limits for power control
+  const powerLimits = getPermissionLimits('power_control')
+  const maxPowerAllowed = powerLimits?.maxPower ?? 100
+  const randomGameLimits = getPermissionLimits('random_game')
+  const maxPowerForRandomGame = randomGameLimits?.maxPower ?? 100
 
   const [isLocked, setIsLocked] = useState(false)
   const [zapActive, setZapActive] = useState(false)
@@ -88,7 +106,7 @@ function LocalMode() {
   useEffect(() => {
     const loadConfig = async () => {
       try {
-        const response = await fetch('/api/config/tiles')
+        const response = await authFetch('/api/config/tiles')
         if (response.ok) {
           const data = await response.json()
           if (data.order && Array.isArray(data.order)) {
@@ -115,7 +133,7 @@ function LocalMode() {
 
     const loadTooltips = async () => {
       try {
-        const response = await fetch('/api/config/tooltips')
+        const response = await authFetch('/api/config/tooltips')
         if (response.ok) {
           const data = await response.json()
           setTooltips(data)
@@ -127,7 +145,7 @@ function LocalMode() {
 
     const loadRandomGameConfig = async () => {
       try {
-        const response = await fetch('/api/config/randomgame')
+        const response = await authFetch('/api/config/randomgame')
         if (response.ok) {
           const data = await response.json()
           setRandomGameConfig(prev => ({ ...prev, ...data }))
@@ -141,12 +159,12 @@ function LocalMode() {
     loadTooltips()
     loadRandomGameConfig()
     checkConnection()
-  }, [checkConnection])
+  }, [checkConnection, authFetch])
 
   // Save config
   const saveConfig = useCallback(async (tiles, theme) => {
     try {
-      await fetch('/api/config/tiles', {
+      await authFetch('/api/config/tiles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order: tiles, theme })
@@ -154,10 +172,23 @@ function LocalMode() {
     } catch (error) {
       console.error('Failed to save config:', error)
     }
-  }, [])
+  }, [authFetch])
 
-  // Get hidden tiles
-  const hiddenTiles = ALL_TILES.filter(t => !visibleTiles.includes(t))
+  // Filter tiles based on permissions
+  const allowedTiles = useMemo(() => {
+    return ALL_TILES.filter(tileId => {
+      const permKey = TILE_PERMISSIONS[tileId]
+      return hasPermission(permKey)
+    })
+  }, [hasPermission])
+
+  // Get tiles that are allowed but currently hidden
+  const hiddenTiles = allowedTiles.filter(t => !visibleTiles.includes(t))
+
+  // Filter visible tiles to only show allowed ones
+  const filteredVisibleTiles = useMemo(() => {
+    return visibleTiles.filter(tileId => allowedTiles.includes(tileId))
+  }, [visibleTiles, allowedTiles])
 
   // Remove tile
   const removeTile = (tileId) => {
@@ -269,8 +300,13 @@ function LocalMode() {
 
   // Power handlers - always send command for resync capability
   const handlePowerUp = async () => {
-    // Optimistic update (clamped for display)
-    const newPower = Math.min(100, state.power + 5)
+    // Check if already at max allowed power
+    if (state.power >= maxPowerAllowed) {
+      addNotification(`Power limited to ${maxPowerAllowed}%`, 'warning')
+      return
+    }
+    // Optimistic update (clamped for display and permission limit)
+    const newPower = Math.min(maxPowerAllowed, state.power + 5)
     setPower(newPower)
     await sendCommand('/PW/+')
     // Try to sync actual value from device
@@ -426,7 +462,7 @@ function LocalMode() {
   // Random Game handlers
   const saveRandomGameConfig = useCallback(async (config) => {
     try {
-      await fetch('/api/config/randomgame', {
+      await authFetch('/api/config/randomgame', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
@@ -434,7 +470,7 @@ function LocalMode() {
     } catch (error) {
       console.error('Failed to save random game config:', error)
     }
-  }, [])
+  }, [authFetch])
 
   const updateRandomGameConfig = (key, value) => {
     const newConfig = { ...randomGameConfig, [key]: value }
@@ -830,9 +866,12 @@ function LocalMode() {
             <div className="power-display-center">
               <div className="power-value-large">{state.power}</div>
               <div className="power-unit">%</div>
+              {maxPowerAllowed < 100 && (
+                <div className="power-limit-indicator">Max: {maxPowerAllowed}%</div>
+              )}
             </div>
             <Tooltip text={tooltips.power?.plus} delay={tooltips.delay}>
-              <Button variant="secondary" className="power-btn-side" onClick={handlePowerUp}>+</Button>
+              <Button variant="secondary" className="power-btn-side" onClick={handlePowerUp} disabled={state.power >= maxPowerAllowed}>+</Button>
             </Tooltip>
           </div>
           <div className="zap-buttons-row">
@@ -1229,6 +1268,18 @@ function LocalMode() {
       {/* Dropdown Menu */}
       {menuOpen && (
         <div className="dropdown-menu">
+          {/* Admin and Logout buttons */}
+          <div className="dropdown-section dropdown-actions">
+            {isAdmin && (
+              <button className="dropdown-action-btn admin-btn" onClick={handleAdminClick}>
+                Admin.
+              </button>
+            )}
+            <button className="dropdown-action-btn logout-btn" onClick={handleLogout}>
+              Logout
+            </button>
+          </div>
+
           {/* Hidden tiles */}
           {hiddenTiles.length > 0 && (
             <div className="dropdown-section">
@@ -1265,7 +1316,7 @@ function LocalMode() {
       {/* Main content */}
       <div className="page local-mode">
         <div className="grid-layout local-grid">
-          {visibleTiles.map((tileId) => (
+          {filteredVisibleTiles.map((tileId) => (
             <div
               key={tileId}
               className={`tile-wrapper ${draggedTile === tileId ? 'dragging' : ''} ${dragOverTile === tileId ? 'drag-over' : ''}`}

@@ -4,6 +4,9 @@ A modern, responsive web application for remote device control. This is a web-ba
 
 ## Features
 
+- **Authentication System** - Secure login with JWT tokens
+- **User Management** - Admin can create, edit, and delete users
+- **Permission System** - Granular permissions per feature with configurable limits
 - **Single Page Control** - All controls on one page with modular tiles
 - **Drag & Drop Tiles** - Organize tiles in your preferred order
 - **Removable Tiles** - Hide tiles you don't need, restore them from the menu
@@ -15,6 +18,7 @@ A modern, responsive web application for remote device control. This is a web-ba
 - **Tilt Control** - Check and set tilt values
 - **Release Control** - Timed release with hold-to-activate
 - **Lock Control** - Lock/unlock with force unlock option
+- **Random Game** - Automated random actions with configurable parameters
 - **Configurable Tooltips** - Hover tooltips with 3-second delay, editable via config file
 - **Persistent Configuration** - All settings saved to `/config` volume
 - **Docker Healthcheck** - Built-in health monitoring
@@ -29,6 +33,50 @@ A modern, responsive web application for remote device control. This is a web-ba
 | **Modes** | 6 mode switches in 2 columns + timer with loop toggle |
 | **Release** | Release time (+/-), hold-to-release button |
 | **Tilt** | Check current tilt, set new tilt value |
+| **Random Game** | Automated random actions with configurable settings |
+
+---
+
+## Authentication & Permissions
+
+### Authentication
+
+The application requires authentication. An admin account is created automatically on first startup using environment variables.
+
+| Environment Variable | Description | Required |
+|---------------------|-------------|----------|
+| `ADMIN_USERNAME` | Admin username | Yes |
+| `ADMIN_PASSWORD` | Admin password (plain text) | Yes |
+| `JWT_SECRET` | Secret for JWT tokens (auto-generated if not set) | No |
+
+### User Management
+
+Administrators can manage users from the **Admin.** panel (accessible via the hamburger menu):
+
+- Create new users with custom permissions
+- Edit user permissions and limits
+- Reset user passwords
+- Delete users
+- Configure session duration
+
+### Permissions
+
+Each user can have specific permissions enabled/disabled:
+
+| Permission | Description | Configurable Limit |
+|------------|-------------|-------------------|
+| `power_control` | Access to Power tile (power +/-, beep, zap) | `maxPower` (0-100%) |
+| `lock_control` | Access to Lock tile | - |
+| `modes_timer` | Access to Modes tile (modes, timer) | `allowedModes` (list) |
+| `release_control` | Access to Release tile | - |
+| `tilt_control` | Access to Tilt tile | - |
+| `random_game` | Access to Random Game tile | `maxPower` (0-100%) |
+| `device_settings` | Can modify device configuration | - |
+
+**Example:** A user with `power_control` permission and `maxPower: 25` will:
+- See only the Power tile
+- Be unable to increase power above 25%
+- See a "Max: 25%" indicator on the power display
 
 ## Technology Stack
 
@@ -57,10 +105,20 @@ A modern, responsive web application for remote device control. This is a web-ba
 git clone https://github.com/nahojnet/FancySteelWebAPP.git
 cd FancySteelWebAPP
 
+# Create .env file with admin credentials
+cp .env.example .env
+# Edit .env and set ADMIN_PASSWORD
+
 # Build and run
 docker-compose up --build -d
 
 # App available at http://localhost:5000
+```
+
+Or with inline environment variables:
+
+```bash
+ADMIN_USERNAME=admin ADMIN_PASSWORD=your_password docker-compose up --build -d
 ```
 
 ### Run with Docker
@@ -69,11 +127,13 @@ docker-compose up --build -d
 # Build image
 docker build -t fancy-steel-webapp .
 
-# Run container
+# Run container (ADMIN_PASSWORD is required)
 docker run -d \
   --name fancy-steel \
   -p 5000:5000 \
   -v fancy-steel-config:/config \
+  -e ADMIN_USERNAME=admin \
+  -e ADMIN_PASSWORD=your_secure_password \
   --restart unless-stopped \
   fancy-steel-webapp
 ```
@@ -96,10 +156,13 @@ All configuration is stored in the `/config` directory:
 
 | File | Description |
 |------|-------------|
+| `users.json` | User accounts and permissions |
+| `auth-config.json` | Authentication settings (session duration) |
 | `settings.json` | Device connection settings |
 | `state.json` | Device state (power, switches) |
 | `tiles.json` | Tile order and selected theme |
 | `tooltips.json` | Tooltip text for all buttons |
+| `randomgame.json` | Random game configuration |
 
 ### Tooltips Configuration
 
@@ -170,9 +233,31 @@ The backend proxies requests to the device at `192.168.4.1` (configurable):
 
 ## API Endpoints
 
+### Authentication (public)
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/health` | Health check (used by Docker) |
+| `POST` | `/api/auth/login` | Login with username/password |
+| `GET` | `/api/auth/verify` | Verify JWT token validity |
+| `GET` | `/api/auth/me` | Get current user info |
+
+### Administration (admin only)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/admin/users` | List all users |
+| `POST` | `/api/admin/users` | Create new user |
+| `PUT` | `/api/admin/users/:id` | Update user permissions |
+| `DELETE` | `/api/admin/users/:id` | Delete user |
+| `POST` | `/api/admin/users/:id/reset-password` | Reset user password |
+| `GET` | `/api/admin/auth-config` | Get auth configuration |
+| `PUT` | `/api/admin/auth-config` | Update auth configuration |
+
+### Device & Configuration (authenticated)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/health` | Health check (public, used by Docker) |
 | `GET` | `/api/state` | Get device state |
 | `POST` | `/api/state` | Update device state |
 | `GET` | `/api/config` | Get app configuration |
@@ -183,6 +268,8 @@ The backend proxies requests to the device at `192.168.4.1` (configurable):
 | `POST` | `/api/config/tooltips` | Save tooltip configuration |
 | `GET` | `/api/device/check` | Check device connection |
 | `ALL` | `/api/device/proxy/*` | Proxy requests to device |
+
+All endpoints except `/api/health` and `/api/auth/login` require a valid JWT token in the `Authorization: Bearer <token>` header.
 
 ---
 
@@ -208,8 +295,9 @@ cd ../backend && npm install
 ### Running
 
 ```bash
-# Terminal 1: Backend
-cd backend && npm run dev
+# Terminal 1: Backend (with required env vars)
+cd backend
+ADMIN_USERNAME=admin ADMIN_PASSWORD=admin123 CONFIG_PATH=../config npm run dev
 
 # Terminal 2: Frontend
 cd frontend && npm run dev
@@ -217,6 +305,7 @@ cd frontend && npm run dev
 
 - Frontend: http://localhost:3000
 - Backend: http://localhost:5000
+- Default admin login: `admin` / `admin123` (as set above)
 
 ---
 
@@ -227,31 +316,40 @@ FancySteelWebAPP/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Layout.jsx      # Header with menu
-│   │   │   ├── Toggle.jsx      # Switch component
-│   │   │   ├── Button.jsx      # Button component
-│   │   │   ├── Card.jsx        # Tile container
-│   │   │   ├── Tooltip.jsx     # Tooltip with delay
+│   │   │   ├── Layout.jsx        # Header with menu
+│   │   │   ├── ProtectedRoute.jsx # Auth route wrapper
+│   │   │   ├── Toggle.jsx        # Switch component
+│   │   │   ├── Button.jsx        # Button component
+│   │   │   ├── Card.jsx          # Tile container
+│   │   │   ├── Tooltip.jsx       # Tooltip with delay
 │   │   │   └── Notifications.jsx
 │   │   ├── pages/
-│   │   │   └── LocalMode.jsx   # Main control page
+│   │   │   ├── LocalMode.jsx     # Main control page
+│   │   │   ├── Login.jsx         # Login page
+│   │   │   └── Admin.jsx         # Admin panel
 │   │   ├── context/
-│   │   │   └── AppContext.jsx  # State management
+│   │   │   ├── AppContext.jsx    # App state management
+│   │   │   └── AuthContext.jsx   # Auth state management
 │   │   ├── styles/
-│   │   │   └── index.css       # All styles + themes
+│   │   │   └── index.css         # All styles + themes
 │   │   ├── App.jsx
 │   │   └── main.jsx
 │   ├── vite.config.js
 │   └── package.json
 ├── backend/
 │   ├── src/
-│   │   └── server.js           # Express API + device proxy
+│   │   ├── server.js             # Express API + device proxy
+│   │   └── auth.js               # Authentication module
 │   └── package.json
-├── config/                      # Persistent configuration
+├── config/                        # Persistent configuration (volume)
+│   ├── users.json                # User accounts
+│   ├── auth-config.json          # Auth settings
 │   ├── settings.json
 │   ├── state.json
 │   ├── tiles.json
-│   └── tooltips.json
+│   ├── tooltips.json
+│   └── randomgame.json
+├── .env.example                   # Environment variables template
 ├── Dockerfile
 ├── docker-compose.yml
 └── README.md

@@ -13,6 +13,11 @@ services:
       - NODE_ENV=production
       - PORT=5000
       - CONFIG_PATH=/config
+      # REQUIRED: Admin credentials for authentication
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      # Optional: JWT secret (auto-generated if not provided)
+      - JWT_SECRET=${JWT_SECRET:-}
     volumes:
       - fancy-steel-config:/config
     restart: unless-stopped
@@ -42,6 +47,9 @@ services:
       - NODE_ENV=development
       - CONFIG_PATH=/config
       - CHOKIDAR_USEPOLLING=true
+      # Admin credentials for development
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
     profiles:
       - dev
 
